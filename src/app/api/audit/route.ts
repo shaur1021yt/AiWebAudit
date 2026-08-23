@@ -3,7 +3,6 @@ import { urlSchema } from "@/lib/validators";
 import { runAudit } from "@/lib/audit/engine";
 import { createAudit, updateAudit, getAllAudits } from "@/lib/store";
 import { saveAuditToDb, updateAuditInDb } from "@/lib/db";
-import { checkRateLimit, recordScan, verifyAdminPassword } from "@/lib/rateLimit";
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,30 +16,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get client IP
-    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
-      || request.headers.get("x-real-ip")
-      || "127.0.0.1";
-
-    // Check admin password bypass
-    const adminPassword = body.adminPassword;
-    const isAdmin = adminPassword && verifyAdminPassword(adminPassword);
-
-    // Rate limit check (skip for admins)
-    if (!isAdmin) {
-      const limit = checkRateLimit(ip);
-      if (!limit.allowed) {
-        return NextResponse.json(
-          {
-            error: `Free scan limit reached. You get 1 free scan per day.`,
-            rateLimited: true,
-            resetsIn: limit.resetsIn,
-          },
-          { status: 429 }
-        );
-      }
-    }
-
     let url = parsed.data.url.trim();
     if (!url.startsWith("http")) url = `https://${url}`;
 
@@ -49,15 +24,10 @@ export async function POST(request: NextRequest) {
       try { return new URL(url).hostname; } catch { return url; }
     })();
 
-    // Record the scan for rate limiting
-    if (!isAdmin) {
-      recordScan(ip);
-    }
-
-    // Save to in-memory store (for real-time progress)
+    // Save to in-memory store (for real-time progress on same instance)
     createAudit(jobId, url);
 
-    // Save to database (for persistence)
+    // Save to database (for persistence across serverless instances)
     await saveAuditToDb({ id: jobId, url, domain });
 
     // Run audit in background (non-blocking)
@@ -77,7 +47,6 @@ export async function POST(request: NextRequest) {
       jobId,
       status: "QUEUED",
       message: "Audit started successfully",
-      ...(isAdmin && { bypassedRateLimit: true }),
     });
   } catch (error) {
     console.error("Audit API error:", error);

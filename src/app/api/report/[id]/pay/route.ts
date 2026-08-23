@@ -9,15 +9,13 @@ export async function POST(
   const { id } = await params;
   const { planType } = await _request.json().catch(() => ({ planType: "full_audit" }));
 
+  // Update in-memory store (if available)
   const audit = getAudit(id);
-  if (!audit) {
-    return NextResponse.json({ error: "Audit not found" }, { status: 404 });
+  if (audit) {
+    updateAudit(id, { paidReport: true, planType: planType || "full_audit" });
   }
 
-  // Update in-memory store
-  updateAudit(id, { paidReport: true, planType: planType || "full_audit" });
-
-  // Persist to database
+  // Persist to database (works across serverless instances)
   await markAuditPaidInDb(id, planType || "full_audit");
 
   return NextResponse.json({ success: true, planType: planType || "full_audit" });

@@ -158,7 +158,7 @@ export async function loadAuditFromDb(id: string) {
   try {
     const audit = await prisma.audit.findUnique({
       where: { id },
-      include: { report: true },
+      include: { report: true, website: true },
     });
     return audit;
   } catch (error: any) {

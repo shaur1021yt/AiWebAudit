@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAudit } from "@/lib/store";
+import { loadAuditFromDb } from "@/lib/db";
 
 export async function GET(
   request: NextRequest,
@@ -7,7 +8,26 @@ export async function GET(
 ) {
   const { id } = await params;
 
-  const audit = getAudit(id);
+  // Try in-memory first (works on same serverless instance)
+  let audit = getAudit(id);
+
+  // Fall back to database (for cross-instance polling on Vercel)
+  if (!audit) {
+    const dbAudit = await loadAuditFromDb(id);
+    if (dbAudit) {
+      // Reconstruct the shape the frontend expects
+      audit = {
+        id: dbAudit.id,
+        url: dbAudit.website?.url || "",
+        domain: dbAudit.website?.domain || "",
+        status: dbAudit.status,
+        result: dbAudit.issues || null,
+        error: dbAudit.errorMessage || undefined,
+        progress: undefined,
+        createdAt: dbAudit.createdAt.getTime(),
+      };
+    }
+  }
 
   if (!audit) {
     return NextResponse.json(
