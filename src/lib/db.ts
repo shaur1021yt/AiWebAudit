@@ -10,41 +10,30 @@ export async function saveAuditToDb(data: {
   userId?: string;
 }) {
   try {
-    let userId = data.userId;
+    const userId = data.userId || `anon-${data.id.slice(0, 16)}`;
 
-    // If no user provided, create/reuse an anonymous user
-    if (!userId) {
-      const anonEmail = `anon-${data.id.slice(0, 20)}@placeholder.local`;
-      const user = await prisma.user.upsert({
-        where: { email: anonEmail },
+    // Ensure user exists
+    let user;
+    try {
+      user = await prisma.user.upsert({
+        where: { email: `${userId}@siteaudit.local` },
         update: {},
-        create: {
-          email: anonEmail,
-          password: "anon",
-        },
+        create: { email: `${userId}@siteaudit.local`, password: "anon" },
       });
-      userId = user.id;
+    } catch {
+      // If user creation fails (e.g. DB down), skip DB entirely
+      console.log("Skipping DB save — user creation failed");
+      return null;
     }
 
     const website = await prisma.website.upsert({
-      where: {
-        userId_url: { userId, url: data.url },
-      },
+      where: { userId_url: { userId: user.id, url: data.url } },
       update: {},
-      create: {
-        url: data.url,
-        domain: data.domain,
-        userId,
-      },
+      create: { url: data.url, domain: data.domain, userId: user.id },
     });
 
     const audit = await prisma.audit.create({
-      data: {
-        id: data.id,
-        websiteId: website.id,
-        userId,
-        status: "QUEUED",
-      },
+      data: { id: data.id, websiteId: website.id, userId: user.id, status: "QUEUED" },
     });
 
     return audit;

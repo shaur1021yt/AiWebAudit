@@ -1,14 +1,12 @@
 "use client";
 
 import { use, useEffect, useState, useCallback } from "react";
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
 import { PayPalScriptProvider, PayPalButtons, usePayPalScriptReducer } from "@paypal/react-paypal-js";
 import { ScoreGauge } from "@/components/ScoreGauge";
 import { CategoryScore } from "@/components/CategoryScore";
 import { IssueCard } from "@/components/IssueCard";
 import { getCategoryIcon, sortIssuesBySeverity, countIssuesBySeverity } from "@/lib/audit/scorer";
-import { ArrowRight, Download, Share2, Lock, Check, Zap, Crown, Tag } from "lucide-react";
+import { ArrowRight, Download, Share2, Lock, Check, Zap, Tag, FileText } from "lucide-react";
 import { PLANS } from "@/lib/pricing";
 import type { Issue } from "@/lib/audit/types";
 
@@ -26,12 +24,12 @@ function PayPalCheckoutButtons({
   auditId,
   planType,
   referralCode,
-  onSuccess,
+  onDemoComplete,
 }: {
   auditId: string;
   planType: string;
   referralCode: string;
-  onSuccess: (redirectUrl: string) => void;
+  onDemoComplete: (url: string) => void;
 }) {
   const [{ options, isPending }] = usePayPalScriptReducer();
 
@@ -43,13 +41,9 @@ function PayPalCheckoutButtons({
     });
     const data = await res.json();
 
-    if (data.requiresAuth) {
-      window.location.href = "/dashboard";
-      return "";
-    }
-    if (data.url && !data.orderId) {
-      // Demo mode — redirect directly
-      window.location.href = data.url;
+    if (data.url) {
+      // Demo mode or redirect
+      onDemoComplete(data.url);
       return "";
     }
     if (data.error) {
@@ -57,7 +51,7 @@ function PayPalCheckoutButtons({
       return "";
     }
     return data.orderId;
-  }, [auditId, planType, referralCode]);
+  }, [auditId, planType, referralCode, onDemoComplete]);
 
   const onApprove = useCallback(
     async (data: any) => {
@@ -104,15 +98,13 @@ function PayPalCheckoutButtons({
 
 export default function ReportPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { data: session } = useSession();
-  const router = useRouter();
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [referralCode, setReferralCode] = useState("");
   const [referralDiscount, setReferralDiscount] = useState<number | null>(null);
   const [referralError, setReferralError] = useState("");
-  const [paying, setPaying] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<string>("full_audit");
 
   useEffect(() => {
     const fetchReport = async () => {
@@ -166,40 +158,6 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
     }
   };
 
-  const handleCheckout = async (plan: string) => {
-    if (!session) {
-      router.push("/dashboard");
-      return;
-    }
-    setPaying(true);
-    try {
-      const res = await fetch("/api/paypal/create-order", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          auditId: id,
-          planType: plan,
-          referralCode: referralCode || undefined,
-        }),
-      });
-      const d = await res.json();
-      if (d.requiresAuth) {
-        router.push("/dashboard");
-      } else if (d.url) {
-        // Demo mode
-        window.location.href = d.url;
-      } else if (d.approveUrl) {
-        window.location.href = d.approveUrl;
-      } else {
-        alert(d.error || "Checkout failed");
-      }
-    } catch {
-      alert("Checkout failed. Please try again.");
-    } finally {
-      setPaying(false);
-    }
-  };
-
   const formatCents = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
   const handlePDF = () => window.print();
@@ -249,14 +207,10 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
     { name: "Conversion", key: "conversion", score: result.conversion.score, issues: result.conversion.issues.length },
   ];
 
-  const visibleIssueCount = paid ? sortedIssues.length : 3;
-  const visibleIssues = sortedIssues.slice(0, visibleIssueCount);
-  const lockedIssues = sortedIssues.slice(visibleIssueCount);
-
   return (
     <div className="mx-auto max-w-4xl px-4 sm:px-6 py-10">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-8 print:mb-4">
         <div>
           <h1 className="text-2xl font-bold">Audit Report</h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -265,16 +219,23 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
             </a>
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 no-print">
           <button onClick={() => navigator.clipboard.writeText(window.location.origin + "/report/" + id)} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-lg hover:bg-muted">
             <Share2 className="w-4 h-4" /> Share
           </button>
           {paid && (
             <button onClick={handlePDF} className="flex items-center gap-1.5 text-sm bg-primary text-primary-foreground px-3 py-1.5 rounded-lg hover:bg-primary/90 transition-colors">
-              <Download className="w-4 h-4" /> PDF
+              <Download className="w-4 h-4" /> Download PDF
             </button>
           )}
         </div>
+      </div>
+
+      {/* Print-only header */}
+      <div className="hidden print:block mb-6 text-center border-b pb-4">
+        <h1 className="text-xl font-bold">SiteAudit AI — Website Audit Report</h1>
+        <p className="text-sm text-gray-500">{data.domain} • {data.url}</p>
+        <p className="text-xs text-gray-400">Generated {new Date(data.createdAt).toLocaleDateString()}</p>
       </div>
 
       {paid && planType && PLANS[planType] && (
@@ -292,14 +253,20 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
         </p>
       </div>
 
-      {/* Categories */}
+      {/* Categories — blurred if not paid */}
       <div className="mb-10">
         <h2 className="text-lg font-semibold mb-4">Category Scores</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 ${!paid ? "blur-[4px] select-none pointer-events-none opacity-50" : ""}`}>
           {categories.map((cat, i) => (
             <CategoryScore key={cat.key} name={cat.name} icon={getCategoryIcon(cat.key)} score={cat.score} issueCount={cat.issues} delay={i * 80} />
           ))}
         </div>
+        {!paid && (
+          <div className="text-center mt-3">
+            <Lock className="w-4 h-4 text-muted-foreground inline mr-1" />
+            <span className="text-xs text-muted-foreground">Unlock to see category details</span>
+          </div>
+        )}
       </div>
 
       {/* Severity summary */}
@@ -319,15 +286,18 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
 
       {/* Issues */}
       <div className="mb-10">
-        <h2 className="text-lg font-semibold mb-4">All Issues ({allIssues.length})</h2>
+        <h2 className="text-lg font-semibold mb-4">
+          {paid ? `All Issues (${allIssues.length})` : `Top Issue (of ${allIssues.length} total)`}
+        </h2>
         <div className="space-y-2">
-          {visibleIssues.map((issue, i) => (
-            <IssueCard key={issue.id} issue={issue} locked={false} index={i} />
-          ))}
-          {lockedIssues.length > 0 && (
+          {/* Show 1 issue free, rest blurred */}
+          {sortedIssues.length > 0 && (
+            <IssueCard key={sortedIssues[0].id} issue={sortedIssues[0]} locked={false} index={0} />
+          )}
+          {!paid && sortedIssues.length > 1 && (
             <div className="relative">
-              <div className="blur-[3px] select-none pointer-events-none opacity-60 space-y-2">
-                {lockedIssues.slice(0, 5).map((issue) => (
+              <div className="blur-[4px] select-none pointer-events-none opacity-50 space-y-2">
+                {sortedIssues.slice(1, 6).map((issue) => (
                   <div key={issue.id} className="rounded-lg border border-border/50 bg-card p-4">
                     <div className="flex items-center gap-3">
                       <div className="w-2 h-2 rounded-full bg-muted-foreground/30" />
@@ -338,10 +308,14 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
               </div>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <Lock className="w-6 h-6 text-muted-foreground mb-2" />
-                <p className="text-sm font-medium">{lockedIssues.length} issues locked</p>
+                <p className="text-sm font-medium">{sortedIssues.length - 1} issues locked</p>
               </div>
             </div>
           )}
+          {/* Show all if paid */}
+          {paid && sortedIssues.slice(1).map((issue, i) => (
+            <IssueCard key={issue.id} issue={issue} locked={false} index={i + 1} />
+          ))}
         </div>
       </div>
 
@@ -392,24 +366,16 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
 
       {/* Upgrade CTA (if not paid) */}
       {!paid && (
-        <div className="rounded-xl border border-primary/20 bg-primary/5 p-8 text-center">
+        <div className="rounded-xl border border-primary/20 bg-primary/5 p-8 text-center no-print">
           <Lock className="w-8 h-8 text-primary mx-auto mb-3" />
           <h3 className="text-lg font-semibold mb-2">Unlock Full Report</h3>
-          <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto">
+          <p className="text-sm text-muted-foreground mb-6 max-w-md mx-auto">
             Get all {allIssues.length} issues with detailed explanations, fix instructions, and priority recommendations.
+            No account needed — just pay and download.
           </p>
 
-          {!session && (
-            <p className="text-sm text-muted-foreground mb-4">
-              <button onClick={() => router.push("/dashboard")} className="text-primary hover:underline font-medium">
-                Sign in or create an account
-              </button>{" "}
-              to purchase a report.
-            </p>
-          )}
-
           {/* Referral code */}
-          <div className="flex items-center gap-2 max-w-xs mx-auto mb-6">
+          <div className="flex items-center gap-2 max-w-xs mx-auto mb-4">
             <Tag className="w-4 h-4 text-muted-foreground shrink-0" />
             <input
               type="text"
@@ -427,20 +393,23 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
             <p className="text-sm text-red-500 mb-4">{referralError}</p>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl mx-auto">
+          {/* Plan selector */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl mx-auto mb-6">
             {(["full_audit", "ai_improvement_plan", "pro_audit"] as const).map((planId) => {
               const plan = PLANS[planId];
               const finalCents = referralDiscount
                 ? Math.floor(plan.basePriceCents * (1 - referralDiscount / 100))
                 : plan.basePriceCents;
               const isPopular = planId === "ai_improvement_plan";
+              const isSelected = selectedPlan === planId;
               return (
                 <button
                   key={planId}
-                  onClick={() => handleCheckout(planId)}
-                  disabled={paying}
-                  className={`rounded-xl border p-5 text-left hover:shadow-md transition-shadow relative ${
-                    isPopular ? "border-primary/30 bg-primary/5" : "border-border/50 bg-card"
+                  onClick={() => setSelectedPlan(planId)}
+                  className={`rounded-xl border p-5 text-left transition-all relative ${
+                    isSelected
+                      ? "border-primary bg-primary/5 shadow-md ring-2 ring-primary/20"
+                      : "border-border/50 bg-card hover:border-border"
                   }`}
                 >
                   {isPopular && (
@@ -461,41 +430,44 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
                     {plan.features.slice(0, 4).map(f => <li key={f}>• {f}</li>)}
                   </ul>
                   <div className="mt-3 text-xs font-medium text-primary">
-                    {session ? (paying ? "Processing..." : "Pay with PayPal →") : "Sign in to purchase →"}
+                    {isSelected ? "✓ Selected" : "Click to select"}
                   </div>
                 </button>
               );
             })}
           </div>
 
-          {/* PayPal buttons below the cards */}
-          {session && (
-            <div className="max-w-sm mx-auto mt-6">
-              <PayPalScriptProvider
-                options={{
-                  clientId: process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "sb",
-                  currency: "USD",
-                  intent: "capture",
-                }}
-              >
-                {/* Default: Full Audit button */}
-                <div className="rounded-xl border border-border/50 bg-card p-4">
-                  <p className="text-sm font-medium mb-3">Pay with PayPal</p>
-                  <PayPalCheckoutButtons
-                    auditId={id}
-                    planType="full_audit"
-                    referralCode={referralCode}
-                    onSuccess={(url) => { window.location.href = url; }}
-                  />
-                  <p className="text-xs text-muted-foreground mt-2 text-center">
-                    Choose a plan above, then click PayPal to pay
-                  </p>
-                </div>
-              </PayPalScriptProvider>
-            </div>
-          )}
+          {/* PayPal buttons */}
+          <div className="max-w-sm mx-auto">
+            <PayPalScriptProvider
+              options={{
+                clientId: process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "sb",
+                currency: "USD",
+                intent: "capture",
+              }}
+            >
+              <div className="rounded-xl border border-border/50 bg-card p-4">
+                <p className="text-sm font-medium mb-3">Pay with PayPal</p>
+                <PayPalCheckoutButtons
+                  auditId={id}
+                  planType={selectedPlan}
+                  referralCode={referralCode}
+                  onDemoComplete={(url) => { window.location.href = url; }}
+                />
+                <p className="text-xs text-muted-foreground mt-2 text-center">
+                  Pay with PayPal balance, debit, or credit card
+                </p>
+              </div>
+            </PayPalScriptProvider>
+          </div>
         </div>
       )}
+
+      {/* Footer */}
+      <div className="text-center mt-10 text-xs text-muted-foreground print:mt-6">
+        <p>SiteAudit AI — Automated website audit powered by AI</p>
+        <p className="mt-1">Report generated {new Date(data.createdAt).toLocaleDateString()}</p>
+      </div>
     </div>
   );
 }

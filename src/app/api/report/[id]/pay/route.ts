@@ -15,7 +15,7 @@ export async function POST(
     updateAudit(id, { paidReport: true, planType: planType || "full_audit" });
   }
 
-  // Persist to database (works across serverless instances)
+  // Persist to database
   await markAuditPaidInDb(id, planType || "full_audit");
 
   return NextResponse.json({ success: true, planType: planType || "full_audit" });

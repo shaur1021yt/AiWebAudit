@@ -208,3 +208,59 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #57534e;
 }
+
+/* Print / PDF styles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white !important;
+    color: #1c1917 !important;
+  }
+  .blur-\[4px\] {
+    filter: none !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    user-select: auto !important;
+  }
+  .blur-\[3px\] {
+    filter: none !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    user-select: auto !important;
+  }
+  .relative > div.absolute {
+    display: none !important;
+  }
+  .relative > div.blur-\[4px\] {
+    display: block !important;
+    filter: none !important;
+    opacity: 1 !important;
+  }
+  .relative > div.blur-\[3px\] {
+    display: block !important;
+    filter: none !important;
+    opacity: 1 !important;
+  }
+  a {
+    color: #1c1917 !important;
+    text-decoration: underline;
+  }
+  .print\:mb-4 {
+    margin-bottom: 1rem !important;
+  }
+  .print\:mt-6 {
+    margin-top: 1.5rem !important;
+  }
+  .print\:block {
+    display: block !important;
+  }
+  .print\:hidden {
+    display: none !important;
+  }
+  @page {
+    margin: 1.5cm;
+    size: A4;
+  }
+}

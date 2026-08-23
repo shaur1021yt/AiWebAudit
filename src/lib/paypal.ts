@@ -99,6 +99,7 @@ export async function capturePayPalOrder(orderId: string): Promise<{
   payerEmail: string | null;
   grossAmount: string;
   currency: string;
+  metadata?: Record<string, string>;
 }> {
   const token = await getPayPalAccessToken();
 
@@ -117,11 +118,19 @@ export async function capturePayPalOrder(orderId: string): Promise<{
 
   const data = await res.json();
   const capture = data.purchase_units?.[0]?.payments?.captures?.[0];
+  // Extract metadata from custom_id
+  let metadata: Record<string, string> | undefined;
+  try {
+    const customId = data.purchase_units?.[0]?.custom_id;
+    if (customId) metadata = JSON.parse(customId);
+  } catch {}
+
   return {
     status: data.status,
     payerEmail: data.payer?.email_address || null,
     grossAmount: capture?.amount?.value || "0",
     currency: capture?.amount?.currency_code || "USD",
+    metadata,
   };
 }
 

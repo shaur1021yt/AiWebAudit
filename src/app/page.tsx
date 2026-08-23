@@ -396,10 +396,10 @@ export default function Home() {
                   <p className="text-base font-semibold mb-1">{sortedIssues.length} issues found — unlock to see all</p>
                   <p className="text-sm text-muted-foreground mb-4">Get detailed explanations, fix instructions, and priority ratings</p>
                   <button
-                    onClick={() => router.push("/dashboard")}
+                    onClick={() => jobId ? router.push(`/report/${jobId}`) : null}
                     className="bg-primary text-primary-foreground px-6 py-2.5 rounded-lg font-medium text-sm hover:bg-primary/90 transition-colors flex items-center gap-2"
                   >
-                    Unlock Full Report
+                    Unlock Full Report — From $29.99
                     <ArrowRight className="w-4 h-4" />
                   </button>
                 </div>
