@@ -6,7 +6,7 @@ import { ScoreGauge } from "@/components/ScoreGauge";
 import { CategoryScore } from "@/components/CategoryScore";
 import { IssueCard } from "@/components/IssueCard";
 import { getCategoryIcon, sortIssuesBySeverity, countIssuesBySeverity } from "@/lib/audit/scorer";
-import { ArrowRight, Download, Share2, Lock, Check, Zap, Tag, FileText } from "lucide-react";
+import { ArrowRight, Download, Share2, Lock, Check, Zap, Tag } from "lucide-react";
 import { PLANS } from "@/lib/pricing";
 import type { Issue } from "@/lib/audit/types";
 
@@ -42,7 +42,6 @@ function PayPalCheckoutButtons({
     const data = await res.json();
 
     if (data.url) {
-      // Demo mode or redirect
       onDemoComplete(data.url);
       return "";
     }
@@ -109,22 +108,56 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
   useEffect(() => {
     const fetchReport = async () => {
       try {
+        // Check URL params for payment callback
         const urlParams = new URLSearchParams(window.location.search);
         const paidParam = urlParams.get("paid");
         const planParam = urlParams.get("plan") || "full_audit";
 
         if (paidParam === "1") {
-          await fetch(`/api/report/${id}/pay`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ planType: planParam }),
-          });
+          // Mark as paid in localStorage
+          try {
+            const stored = localStorage.getItem(`audit_${id}`);
+            if (stored) {
+              const parsed = JSON.parse(stored);
+              parsed.paid = true;
+              parsed.planType = planParam;
+              localStorage.setItem(`audit_${id}`, JSON.stringify(parsed));
+            }
+          } catch {}
+
+          // Also try API (best-effort)
+          try {
+            await fetch(`/api/report/${id}/pay`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ planType: planParam }),
+            });
+          } catch {}
         }
 
+        // Try localStorage first (works without DB)
+        try {
+          const stored = localStorage.getItem(`audit_${id}`);
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            setData({
+              id: parsed.id,
+              url: parsed.url,
+              domain: parsed.domain,
+              result: parsed.result,
+              paid: parsed.paid || false,
+              planType: parsed.planType || null,
+              createdAt: parsed.createdAt,
+            });
+            setLoading(false);
+            return;
+          }
+        } catch {}
+
+        // Fall back to API (needs DB)
         const res = await fetch(`/api/report/${id}`);
         if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.error || "Report not found");
+          throw new Error("Report not found. Try scanning the website again from the homepage.");
         }
         const reportData = await res.json();
         setData(reportData);
@@ -290,7 +323,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
           {paid ? `All Issues (${allIssues.length})` : `Top Issue (of ${allIssues.length} total)`}
         </h2>
         <div className="space-y-2">
-          {/* Show 1 issue free, rest blurred */}
+          {/* Show 1 issue free */}
           {sortedIssues.length > 0 && (
             <IssueCard key={sortedIssues[0].id} issue={sortedIssues[0]} locked={false} index={0} />
           )}

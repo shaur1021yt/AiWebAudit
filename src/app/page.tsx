@@ -150,6 +150,16 @@ export default function Home() {
         setResult(data.result);
         setJobId(data.jobId);
         setPhase("result");
+        // Store in localStorage so report page can read it without DB
+        try {
+          localStorage.setItem(`audit_${data.jobId}`, JSON.stringify({
+            id: data.jobId,
+            url: scanUrl,
+            domain: new URL(scanUrl).hostname,
+            result: data.result,
+            createdAt: Date.now(),
+          }));
+        } catch {}
       } else if (data.status === "FAILED") {
         throw new Error(data.error || "Audit failed");
       } else if (!res.ok) {
