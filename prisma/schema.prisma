@@ -1,0 +1,203 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  password      String
+  role          UserRole  @default(USER)
+  stripeCustomerId String? @unique
+  paypalCustomerId String? @unique
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  audits        Audit[]
+  subscription  Subscription?
+  reports       Report[]
+  sessions      Session[]
+  payments      Payment[]
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+model Website {
+  id        String   @id @default(cuid())
+  url       String
+  domain    String
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  audits    Audit[]
+  monitor   Monitor?
+
+  @@unique([userId, url])
+}
+
+model Audit {
+  id             String      @id @default(cuid())
+  websiteId      String
+  website        Website     @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status         AuditStatus @default(QUEUED)
+  overallScore   Int?
+  seoScore       Int?
+  performanceScore Int?
+  accessibilityScore Int?
+  mobileScore    Int?
+  securityScore  Int?
+  contentScore   Int?
+  conversionScore Int?
+  imageScore     Int?
+  linksScore     Int?
+  issues         Json?
+  summary        Json?
+  recommendations Json?
+  crawlStats     Json?
+  metadata       Json?
+  pagesCrawled   Int?
+  linksChecked  Int?
+  duration       Int?         // seconds
+  errorMessage   String?
+  paidReport     Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  report         Report?
+  shareSlug      String?      @unique
+
+  @@index([userId])
+  @@index([websiteId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum AuditStatus {
+  QUEUED
+  SCANNING
+  ANALYZING
+  GENERATING
+  COMPLETED
+  FAILED
+}
+
+model Report {
+  id          String   @id @default(cuid())
+  auditId     String   @unique
+  audit       Audit    @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        ReportType
+  content     Json?
+  pdfUrl      String?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+}
+
+enum ReportType {
+  FREE
+  FULL_AUDIT
+  AI_IMPROVEMENT_PLAN
+  PRO_AUDIT
+}
+
+model Subscription {
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stripeSubscriptionId String   @unique
+  stripePriceId        String
+  status               SubStatus @default(ACTIVE)
+  currentPeriodStart   DateTime
+  currentPeriodEnd     DateTime
+  cancelAtPeriodEnd    Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  monitors             Monitor[]
+}
+
+enum SubStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  INCOMPLETE
+}
+
+model Monitor {
+  id              String   @id @default(cuid())
+  websiteId       String   @unique
+  website         Website  @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  subscriptionId  String?
+  subscription    Subscription? @relation(fields: [subscriptionId], references: [id])
+  intervalDays    Int      @default(7)
+  isActive        Boolean  @default(true)
+  lastScanAt      DateTime?
+  nextScanAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model PricingConfig {
+  id              String   @id @default(cuid())
+  key             String   @unique
+  value           String
+  description     String?
+  updatedAt       DateTime @default(now())
+}
+
+model AuditRateLimit {
+  id        String   @id @default(cuid())
+  ip        String
+  date      DateTime @default(now())
+  count     Int      @default(0)
+
+  @@index([ip, date])
+}
+
+model ReferralCode {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  discountPct Int      @default(25) // percentage off
+  isActive    Boolean  @default(true)
+  usesCount   Int      @default(0)
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  payments    Payment[]
+}
+
+model Payment {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  auditId         String?
+  planType        String   // full_audit, ai_improvement_plan, pro_audit
+  basePriceCents  Int      // original price in cents
+  discountPct     Int      @default(0)
+  finalPriceCents Int      // what they actually paid
+  stripeSessionId String?
+  paypalOrderId   String?
+  status          String   @default("pending") // pending, completed, refunded
+  referralCodeId  String?
+  referralCode    ReferralCode? @relation(fields: [referralCodeId], references: [id])
+  createdAt       DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}
