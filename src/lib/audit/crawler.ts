@@ -3,9 +3,9 @@ import { CrawledPage } from "./types";
 const CRAWL_CONFIG = {
   maxPages: 15,
   maxDepth: 2,
-  timeoutMs: 15000,
-  maxHtmlSize: 5 * 1024 * 1024, // 5MB
-  userAgent: "SiteAuditAI/1.0 (Website Audit Bot)",
+  timeoutMs: 25000,
+  maxHtmlSize: 2 * 1024 * 1024, // 2MB (Vercel memory limit)
+  userAgent: "SiteAuditAI/1.0 (Website Audit Bot; +https://siteaudit.ai)",
 };
 
 function normalizeUrl(url: string, base: string): string | null {
@@ -167,6 +167,7 @@ export async function crawlWebsite(url: string): Promise<{
         },
         signal: controller.signal,
         redirect: "follow",
+
       });
 
       clearTimeout(timeout);
@@ -210,9 +211,13 @@ export async function crawlWebsite(url: string): Promise<{
       for (const externalLink of links.external) {
         allExternalLinks.add(externalLink);
       }
-    } catch (error) {
+    } catch (error: any) {
       // Mark as failed but continue
-      console.error(`Failed to crawl ${normalized}:`, error);
+      if (error?.name === "AbortError" || error?.code === 20) {
+        console.error(`Timeout crawling ${normalized} after ${CRAWL_CONFIG.timeoutMs}ms`);
+      } else {
+        console.error(`Failed to crawl ${normalized}:`, error?.message || error);
+      }
     }
   }
 

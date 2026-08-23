@@ -120,36 +120,40 @@ export default function Home() {
 
     setPhase("scanning");
     setError("");
+    // Show initial scanning steps while we wait for the synchronous response
+    setProgress([
+      { step: "reachable", message: "Checking website...", completed: false },
+      { step: "performance", message: "Checking performance", completed: false },
+      { step: "seo", message: "Analyzing SEO", completed: false },
+      { step: "mobile", message: "Checking mobile experience", completed: false },
+      { step: "accessibility", message: "Checking accessibility", completed: false },
+      { step: "links", message: "Checking links", completed: false },
+      { step: "content", message: "Analyzing content", completed: false },
+      { step: "images", message: "Checking images", completed: false },
+      { step: "conversion", message: "Analyzing conversion factors", completed: false },
+      { step: "security", message: "Checking security", completed: false },
+    ]);
 
     try {
+      // Synchronous audit — waits for full result (5-30s)
       const res = await fetch("/api/audit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: scanUrl }),
       });
 
-      if (!res.ok) {
-        const data = await res.json();
+      const data = await res.json();
+
+      if (data.status === "COMPLETED" && data.result) {
+        // Mark all progress steps as complete
+        setProgress((prev) => prev.map((p) => ({ ...p, completed: true })));
+        setResult(data.result);
+        setJobId(data.jobId);
+        setPhase("result");
+      } else if (data.status === "FAILED") {
+        throw new Error(data.error || "Audit failed");
+      } else if (!res.ok) {
         throw new Error(data.error || "Failed to start audit");
-      }
-
-      const { jobId: jid } = await res.json();
-      setJobId(jid);
-
-      let completed = false;
-      while (!completed) {
-        await new Promise((resolve) => setTimeout(resolve, 800));
-        const statusRes = await fetch(`/api/audit/${jid}`);
-        if (!statusRes.ok) throw new Error("Failed to check audit status");
-        const status = await statusRes.json();
-        if (status.progress) setProgress(status.progress);
-        if (status.status === "COMPLETED") {
-          setResult(status.result);
-          setPhase("result");
-          completed = true;
-        } else if (status.status === "FAILED") {
-          throw new Error(status.error || "Audit failed");
-        }
       }
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred");

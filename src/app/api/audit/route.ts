@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { urlSchema } from "@/lib/validators";
-import { runAudit } from "@/lib/audit/engine";
+import { runAudit, ScanProgress } from "@/lib/audit/engine";
 import { createAudit, updateAudit, getAllAudits } from "@/lib/store";
 import { saveAuditToDb, updateAuditInDb } from "@/lib/db";
 
@@ -27,27 +27,33 @@ export async function POST(request: NextRequest) {
     // Save to in-memory store (for real-time progress on same instance)
     createAudit(jobId, url);
 
-    // Save to database (for persistence across serverless instances)
+    // Save to database
     await saveAuditToDb({ id: jobId, url, domain });
 
-    // Run audit in background (non-blocking)
-    runAudit(url, (progress) => {
-      updateAudit(jobId, { status: "SCANNING", progress });
-    })
-      .then(async (result) => {
-        updateAudit(jobId, { status: "COMPLETED", result, progress: undefined });
-        await updateAuditInDb(jobId, { status: "COMPLETED", result });
-      })
-      .catch(async (error) => {
-        updateAudit(jobId, { status: "FAILED", error: error.message || "Unknown error", progress: undefined });
-        await updateAuditInDb(jobId, { status: "FAILED", errorMessage: error.message });
-      });
+    // Run audit synchronously — return result in the response
+    // This avoids the background job + polling problem on Vercel serverless
+    try {
+      const result = await runAudit(url);
 
-    return NextResponse.json({
-      jobId,
-      status: "QUEUED",
-      message: "Audit started successfully",
-    });
+      // Store result
+      updateAudit(jobId, { status: "COMPLETED", result });
+      await updateAuditInDb(jobId, { status: "COMPLETED", result });
+
+      return NextResponse.json({
+        jobId,
+        status: "COMPLETED",
+        result,
+      });
+    } catch (auditError: any) {
+      updateAudit(jobId, { status: "FAILED", error: auditError.message });
+      await updateAuditInDb(jobId, { status: "FAILED", errorMessage: auditError.message });
+
+      return NextResponse.json({
+        jobId,
+        status: "FAILED",
+        error: auditError.message || "Audit failed",
+      });
+    }
   } catch (error) {
     console.error("Audit API error:", error);
     return NextResponse.json(
