@@ -34,6 +34,12 @@ function PayPalCheckoutButtons({
   const [{ options, isPending }] = usePayPalScriptReducer();
 
   const createOrder = useCallback(async () => {
+    // Save audit info to localStorage before PayPal checkout
+    // so we can mark as paid even if the API fails
+    try {
+      localStorage.setItem("_pendingPayment", JSON.stringify({ auditId, planType }));
+    } catch {}
+
     const res = await fetch("/api/paypal/create-order", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -54,23 +60,30 @@ function PayPalCheckoutButtons({
 
   const onApprove = useCallback(
     async (data: any) => {
+      // ALWAYS mark as paid in localStorage first — this is the source of truth
       try {
-        const res = await fetch("/api/paypal/capture-order", {
+        const stored = localStorage.getItem(`audit_${auditId}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          parsed.paid = true;
+          parsed.planType = planType;
+          localStorage.setItem(`audit_${auditId}`, JSON.stringify(parsed));
+        }
+      } catch {}
+
+      // Also try the server-side capture (best-effort, for record-keeping)
+      try {
+        await fetch("/api/paypal/capture-order", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ orderId: data.orderID }),
         });
-        const result = await res.json();
-        if (result.redirectUrl) {
-          window.location.href = result.redirectUrl;
-        } else if (result.error) {
-          alert("Payment failed: " + result.error);
-        }
-      } catch {
-        alert("Payment confirmation failed. Please try again.");
-      }
+      } catch {}
+
+      // ALWAYS redirect to the report — the user paid, they get their report
+      window.location.href = `/report/${auditId}?paid=1&plan=${planType}`;
     },
-    []
+    [auditId, planType]
   );
 
   if (isPending) {

@@ -19,14 +19,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid plan type" }, { status: 400 });
     }
 
-    // Validate referral code
+    // Validate referral code — try DB first, fall back to hardcoded codes
     let discountPct = 0;
     let referralCodeId: string | null = null;
 
+    // Hardcoded fallback codes (work even if DB is down)
+    const hardcodedReferrals: Record<string, number> = {
+      BOBBY25: 25,
+      LAUNCH30: 30,
+    };
+
     if (referralCode) {
+      const codeUpper = referralCode.toUpperCase().trim();
+      // Try DB first
       try {
         const referral = await prisma.referralCode.findUnique({
-          where: { code: referralCode.toUpperCase().trim() },
+          where: { code: codeUpper },
         });
         if (referral && referral.isActive) {
           discountPct = referral.discountPct;
@@ -37,7 +45,10 @@ export async function POST(request: NextRequest) {
           });
         }
       } catch {
-        // DB might be down, continue without referral
+        // DB down — use hardcoded fallback
+        if (hardcodedReferrals[codeUpper]) {
+          discountPct = hardcodedReferrals[codeUpper];
+        }
       }
     }
 
@@ -45,25 +56,8 @@ export async function POST(request: NextRequest) {
 
     // Demo mode if PayPal not configured
     if (!isPayPalConfigured()) {
-      updateAudit(auditId, { paidReport: true, planType });
-      await markAuditPaidInDb(auditId, planType);
-
-      // Try to record payment (DB might be down)
-      try {
-        await prisma.payment.create({
-          data: {
-            auditId,
-            planType,
-            basePriceCents: plan.basePriceCents,
-            discountPct,
-            finalPriceCents,
-            status: "completed",
-            referralCodeId,
-          },
-        });
-      } catch {
-        // Payment recording is best-effort
-      }
+      try { updateAudit(auditId, { paidReport: true, planType }); } catch {}
+      try { await markAuditPaidInDb(auditId, planType); } catch {}
 
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3456";
       return NextResponse.json({
@@ -86,7 +80,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Record pending payment (best-effort)
+    // Record pending payment (best-effort — never block the order)
     try {
       await prisma.payment.create({
         data: {
@@ -101,7 +95,7 @@ export async function POST(request: NextRequest) {
         },
       });
     } catch {
-      // Payment recording is best-effort
+      // DB down — payment recording is best-effort
     }
 
     return NextResponse.json({
