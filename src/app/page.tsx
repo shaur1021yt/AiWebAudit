@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
   Search,
   ArrowRight,
@@ -217,7 +218,9 @@ export default function Home() {
       ]
     : [];
 
-  const lockedCount = 0; // paywall removed for preview
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
+  const showFull = isAdmin; // Admin sees everything free
 
   return (
     <div className="flex flex-col">
@@ -341,10 +344,16 @@ export default function Home() {
             </p>
           </div>
 
-          {/* Category breakdown — blurred with lock */}
+          {/* Category breakdown */}
           <div className="mb-10 relative">
             <h2 className="text-lg font-semibold mb-4">Category Scores</h2>
-            <div className="blur-[4px] select-none pointer-events-none opacity-50">
+            {isAdmin && (
+              <div className="mb-3 flex items-center gap-2 text-sm bg-primary/10 text-primary px-3 py-1.5 rounded-lg w-fit">
+                <Shield className="w-4 h-4" />
+                <span className="font-medium">Admin — Full Access</span>
+              </div>
+            )}
+            <div className={showFull ? "" : "blur-[4px] select-none pointer-events-none opacity-50 relative"}>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {categories.map((cat, i) => (
                   <CategoryScore
@@ -358,10 +367,12 @@ export default function Home() {
                 ))}
               </div>
             </div>
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <Lock className="w-6 h-6 text-muted-foreground mb-2" />
-              <p className="text-sm font-medium text-muted-foreground">Category details locked</p>
-            </div>
+            {!showFull && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <Lock className="w-6 h-6 text-muted-foreground mb-2" />
+                <p className="text-sm font-medium text-muted-foreground">Category details locked</p>
+              </div>
+            )}
           </div>
 
           {/* 1 Good Thing (free) */}
@@ -387,32 +398,42 @@ export default function Home() {
             </div>
           )}
 
-          {/* Issues — blurred with lock + paywall CTA */}
+          {/* Issues section */}
           {sortedIssues.length > 0 && (
             <div className="mb-8">
               <div className="relative">
-                <div className="blur-[4px] select-none pointer-events-none opacity-50 space-y-2">
-                  {sortedIssues.slice(0, 5).map((issue) => (
-                    <div key={issue.id} className="rounded-lg border border-border/50 bg-card p-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-2 h-2 rounded-full bg-muted-foreground/30" />
-                        <span className="text-sm font-medium">{issue.title}</span>
-                      </div>
+                {showFull ? (
+                  <div className="space-y-2">
+                    {sortedIssues.map((issue, i) => (
+                      <IssueCard key={issue.id} issue={issue} locked={false} index={i} />
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    <div className="blur-[4px] select-none pointer-events-none opacity-50 space-y-2">
+                      {sortedIssues.slice(0, 5).map((issue) => (
+                        <div key={issue.id} className="rounded-lg border border-border/50 bg-card p-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-2 h-2 rounded-full bg-muted-foreground/30" />
+                            <span className="text-sm font-medium">{issue.title}</span>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <Lock className="w-8 h-8 text-muted-foreground mb-3" />
-                  <p className="text-base font-semibold mb-1">{sortedIssues.length} issues found — unlock to see all</p>
-                  <p className="text-sm text-muted-foreground mb-4">Get detailed explanations, fix instructions, and priority ratings</p>
-                  <button
-                    onClick={() => jobId ? router.push(`/report/${jobId}`) : null}
-                    className="bg-primary text-primary-foreground px-6 py-2.5 rounded-lg font-medium text-sm hover:bg-primary/90 transition-colors flex items-center gap-2"
-                  >
-                    Unlock Full Report — From $29.99
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                </div>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <Lock className="w-8 h-8 text-muted-foreground mb-3" />
+                      <p className="text-base font-semibold mb-1">{sortedIssues.length} issues found — unlock to see all</p>
+                      <p className="text-sm text-muted-foreground mb-4">Get detailed explanations, fix instructions, and priority ratings</p>
+                      <button
+                        onClick={() => jobId ? router.push(`/report/${jobId}`) : null}
+                        className="bg-primary text-primary-foreground px-6 py-2.5 rounded-lg font-medium text-sm hover:bg-primary/90 transition-colors flex items-center gap-2"
+                      >
+                        Unlock Full Report — From $29.99
+                        <ArrowRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}

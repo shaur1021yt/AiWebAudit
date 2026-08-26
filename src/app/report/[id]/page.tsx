@@ -1,12 +1,13 @@
 "use client";
 
 import { use, useEffect, useState, useCallback } from "react";
+import { useSession } from "next-auth/react";
 import { PayPalScriptProvider, PayPalButtons, usePayPalScriptReducer } from "@paypal/react-paypal-js";
 import { ScoreGauge } from "@/components/ScoreGauge";
 import { CategoryScore } from "@/components/CategoryScore";
 import { IssueCard } from "@/components/IssueCard";
 import { getCategoryIcon, sortIssuesBySeverity, countIssuesBySeverity } from "@/lib/audit/scorer";
-import { ArrowRight, Download, Share2, Lock, Check, Zap, Tag } from "lucide-react";
+import { ArrowRight, Download, Share2, Lock, Check, Zap, Tag, Shield } from "lucide-react";
 import { PLANS } from "@/lib/pricing";
 import type { Issue } from "@/lib/audit/types";
 
@@ -110,6 +111,8 @@ function PayPalCheckoutButtons({
 
 export default function ReportPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const { data: session } = useSession();
+  const isAdmin = (session?.user as any)?.role === "ADMIN";
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -231,8 +234,8 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
   }
 
   const result = data.result;
-  const paid = data.paid;
-  const planType = data.planType;
+  const paid = data.paid || isAdmin; // Admin gets everything free
+  const planType = data.planType || (isAdmin ? "pro_audit" : null);
 
   const allIssues: Issue[] = [
     ...result.seo.issues, ...result.performance.issues, ...result.accessibility.issues,
@@ -284,7 +287,13 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
         <p className="text-xs text-gray-400">Generated {new Date(data.createdAt).toLocaleDateString()}</p>
       </div>
 
-      {paid && planType && PLANS[planType] && (
+      {isAdmin && !data.paid && (
+        <div className="mb-6 flex items-center gap-2 text-sm bg-primary/10 text-primary px-3 py-1.5 rounded-lg w-fit">
+          <Shield className="w-4 h-4" />
+          <span className="font-medium">Admin — Free Access</span>
+        </div>
+      )}
+      {paid && planType && PLANS[planType] && !isAdmin && (
         <div className="mb-6 flex items-center gap-2 text-sm">
           <span className="text-primary"><Check className="w-4 h-4" /></span>
           <span className="font-medium">{PLANS[planType].name}</span>
@@ -410,8 +419,8 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
         </div>
       )}
 
-      {/* Upgrade CTA (if not paid) */}
-      {!paid && (
+      {/* Upgrade CTA (if not paid and not admin) */}
+      {!paid && !isAdmin && (
         <div className="rounded-xl border border-primary/20 bg-primary/5 p-8 text-center no-print">
           <Lock className="w-8 h-8 text-primary mx-auto mb-3" />
           <h3 className="text-lg font-semibold mb-2">Unlock Full Report</h3>
