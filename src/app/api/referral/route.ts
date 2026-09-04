@@ -5,7 +5,6 @@ import { prisma } from "@/lib/prisma";
 const FALLBACK_CODES: Record<string, number> = {
   BOBBY25: 25,
   LAUNCH30: 30,
-  free1021123: 100,
 };
 
 // POST /api/referral — validate a referral code
